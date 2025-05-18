@@ -1,0 +1,196 @@
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 1rem;
+  background: #f9f9f9;
+}
+
+.container {
+  max-width: 600px;
+  margin: auto;
+}
+
+.user-card {
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.user-card h3 {
+  margin: 0 0 0.5rem;
+}
+
+.add-user-btn, .search-input, .form-input {
+  width: 100%;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  border-radius: 5px;
+  border: 1px solid #ccc;
+  box-sizing: border-box;
+}
+
+.search-input {
+  margin-top: 1rem;
+}
+
+.modal {
+  display: none;
+  position: fixed;
+  z-index: 10;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0,0,0,0.5);
+}
+
+.modal-content {
+  background-color: #fff;
+  margin: 10% auto;
+  padding: 1rem;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 400px;
+}
+
+.modal-content button {
+  width: 100%;
+  padding: 0.75rem;
+  background-color: #007bff;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+}
+.button-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 1rem;
+}
+
+.add-user-btn, .refresh-btn {
+  height: 48px; /* Ensures uniform height */
+  padding: 0 1rem;
+  border-radius: 5px;
+  border: 1px solid #ccc;
+  font-weight: bold;
+  font-size: 16px;
+  box-sizing: border-box;
+}
+
+.add-user-btn {
+  flex: 0 0 80%;
+  background-color: #007bff;
+  color: white;
+  border: none;
+}
+
+.refresh-btn {
+  flex: 0 0 20%;
+  background-color: transparent;
+  color: black;
+  border: 1px solid #ccc;
+  cursor: pointer;
+}
+.button-row {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.add-user-btn {
+  flex: 25;
+  padding: 0.75rem;
+  font-size: 1rem;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 5px;
+}
+
+.refresh-btn {
+  flex: 2;
+  padding: 0.75rem;
+  font-size: 1.5rem;
+  background: transparent;
+  color: black;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.user-card ul {
+  margin: 0.5rem 0 0 1rem;
+  padding-left: 1rem;
+}
+
+.user-card li {
+  margin-bottom: 0.25rem;
+}
+.medicine-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.medicine-list {
+  margin: 0;
+  padding-left: 20px;
+  list-style-type: disc;
+}
+.user-card .card-buttons button {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.user-card .card-buttons button:hover {
+  opacity: 0.85;
+}
+
+.user-card .card-buttons button:nth-child(1) {
+  background-color: #007bff;
+  color: white;
+}
+
+.user-card .card-buttons button:nth-child(2) {
+  background-color: #dc3545;
+  color: white;
+}
+
+.user-card {
+  position: relative;
+  padding: 20px 20px 20px 20px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  background: #fff;
+}
+
+.card-actions {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 8px;
+}
+
+.card-actions button {
+  padding: 5px 10px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.card-actions button:first-child {
+  background-color: #007bff;
+  color: white;
+}
+
+.card-actions button:last-child {
+  background-color: #dc3545;
+  color: white;
+}
