@@ -1,7 +1,9 @@
 const express = require("express");
 const fs = require("fs");
+const https = require("https");
 const cors = require("cors");
 const path = require("path");
+
 const app = express();
 const PORT = 3000;
 //ngrok tunnel paid // local tunnel unstable // using ip now
@@ -13,9 +15,7 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-//app.options("/*", cors(corsOptions)); // handle preflight requests
-app.options(/^\/.*$/, cors(corsOptions)); // ✅ FIXED
-// app.use(cors());
+app.options(/^\/.*$/, cors(corsOptions));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -142,7 +142,7 @@ function updateMedicineTimersAndNotify() {
             const message = `Reminder: Only ${
               med.daysLeft === 0 ? "no" : med.daysLeft
             } day(s) of ${med.name} left. Please refill. — Knox Medicals`;
-            //  sendSMS(user.phone, message);
+            // sendSMS(user.phone, message);
             console.log(`📩 SMS sent to ${user.phone} regarding ${med.name}`);
           }
         }
@@ -164,8 +164,13 @@ setInterval(updateMedicineTimersAndNotify, 12 * 60 * 60 * 1000);
 // Run once immediately on startup
 updateMedicineTimersAndNotify();
 
-// ----------------- Start Server -----------------
+// ----------------- Start HTTPS Server -----------------
 
-app.listen(PORT, "0.0.0.0", () => {  //ip based port
-  console.log(`✅ Server is operational and listening on port ${PORT}`);
+const httpsOptions = {
+  key: fs.readFileSync(path.join(__dirname, "certs", "key.pem")),
+  cert: fs.readFileSync(path.join(__dirname, "certs", "cert.pem")),
+};
+
+https.createServer(httpsOptions, app).listen(PORT, "0.0.0.0", () => {
+  console.log(`🔒 HTTPS server is running on https://localhost:${PORT}`);
 });
