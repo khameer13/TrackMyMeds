@@ -48,7 +48,7 @@ function renderMessages(messages) {
 }
 
 function loadUsers() {
-  fetch("https://empty-toes-beam.loca.lt/users")
+  fetch("http://192.168.1.6:3000/users")
     .then((response) => response.json())
     .then((data) => {
       users = data;
@@ -221,7 +221,7 @@ function submitUser() {
 }
 
 function saveUser(user) {
-  fetch("https://empty-toes-beam.loca.lt/users", {
+  fetch("http://192.168.1.6:3000/users", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(user),
@@ -237,7 +237,7 @@ function saveUser(user) {
 }
 
 function updateUser(index, user) {
-  fetch(`https://empty-toes-beam.loca.lt/users/${user.phone}`, {
+  fetch(`http://192.168.1.6:3000/users/${user.phone}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(user),
@@ -263,7 +263,7 @@ function deleteUser(index) {
   renderUsers(users);
 
   // Delete on backend (assuming phone is unique ID)
-  fetch(`https://empty-toes-beam.loca.lt/users/${userToDelete.phone}`, {
+  fetch(`http://192.168.1.6:3000/users/${userToDelete.phone}`, {
     method: "DELETE",
   })
     .then((response) => {

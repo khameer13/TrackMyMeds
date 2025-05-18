@@ -4,8 +4,18 @@ const cors = require("cors");
 const path = require("path");
 const app = express();
 const PORT = 3000;
+//ngrok tunnel paid // local tunnel unstable // using ip now
+const corsOptions = {
+  origin: "https://khameer13.github.io", //whitelisting
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  credentials: true,
+  optionsSuccessStatus: 204,
+};
 
-app.use(cors());
+app.use(cors(corsOptions));
+//app.options("/*", cors(corsOptions)); // handle preflight requests
+app.options(/^\/.*$/, cors(corsOptions)); // ✅ FIXED
+// app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -156,6 +166,6 @@ updateMedicineTimersAndNotify();
 
 // ----------------- Start Server -----------------
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {  //ip based port
   console.log(`✅ Server is operational and listening on port ${PORT}`);
 });
