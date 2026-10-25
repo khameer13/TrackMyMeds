@@ -1,176 +1,227 @@
 const express = require("express");
 const fs = require("fs");
+const http = require("http");
 const https = require("https");
 const cors = require("cors");
 const path = require("path");
 
+// ----------------- Config -----------------
+
+const PORT = Number(process.env.PORT) || 3000;
+const HOST = process.env.HOST || "0.0.0.0";
+const DATA_FILE = path.resolve(process.env.DATA_FILE || path.join(__dirname, "users.json"));
+const CERT_DIR = path.join(__dirname, "certs");
+const TICK_MS = 12 * 60 * 60 * 1000; // background job interval
+const REFILL_THRESHOLD = 1; // days
+
+// Comma-separated list, e.g. ALLOWED_ORIGINS=https://khameer13.github.io,http://localhost:5500
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "https://khameer13.github.io")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 const app = express();
-const PORT = 3000;
-//ngrok tunnel paid // local tunnel unstable // using ip now
-const corsOptions = {
-  origin: "https://khameer13.github.io", //whitelisting
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  credentials: true,
-  optionsSuccessStatus: 204,
-};
 
-app.use(cors(corsOptions));
-app.options(/^\/.*$/, cors(corsOptions));
-app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+app.use(
+  cors({
+    origin: ALLOWED_ORIGINS,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    optionsSuccessStatus: 204,
+  })
+);
+app.use(express.json({ limit: "100kb" }));
 
-const FILE_PATH = path.resolve(__dirname, "users.json");
+// Serve only the front-end files (never server.js, users.json or certs).
+const FRONTEND = { "/": "index.html", "/index.html": "index.html", "/index.js": "index.js", "/styles.css": "styles.css" };
+for (const [route, file] of Object.entries(FRONTEND)) {
+  app.get(route, (req, res) => res.sendFile(path.join(__dirname, file)));
+}
+
+// ----------------- Storage -----------------
+
+function readUsers() {
+  let raw;
+  try {
+    raw = fs.readFileSync(DATA_FILE, "utf8");
+  } catch (err) {
+    if (err.code === "ENOENT") return [];
+    throw err;
+  }
+  if (!raw.trim()) return [];
+  const data = JSON.parse(raw);
+  if (!Array.isArray(data)) throw new Error("users.json must contain an array");
+  return data.filter((u) => u && typeof u === "object" && u.phone);
+}
+
+// Write to a temp file and rename so a crash never leaves half-written JSON.
+function writeUsers(users) {
+  const tmp = `${DATA_FILE}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(users, null, 2));
+  fs.renameSync(tmp, DATA_FILE);
+}
+
+// ----------------- Validation -----------------
+
+const NAME_RE = /^[A-Za-z][A-Za-z .'-]{0,79}$/;
+const PHONE_RE = /^\d{10}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function str(v, max) {
+  return typeof v === "string" ? v.trim().slice(0, max) : "";
+}
+
+// Returns { user } with only known fields, or { error }.
+function validateUser(body) {
+  if (!body || typeof body !== "object") return { error: "Request body must be a JSON object" };
+  const name = str(body.name, 80).replace(/\s+/g, " ");
+  const phone = str(body.phone, 10);
+  const email = str(body.email, 120);
+  const address = str(body.address, 200);
+
+  if (!NAME_RE.test(name)) return { error: "Name is required (letters, spaces, . ' -)" };
+  if (!PHONE_RE.test(phone)) return { error: "Phone must be exactly 10 digits" };
+  if (email && !EMAIL_RE.test(email)) return { error: "Email address is invalid" };
+
+  const medsIn = body.medicines === undefined ? [] : body.medicines;
+  if (!Array.isArray(medsIn) || medsIn.length > 50) return { error: "medicines must be an array (max 50)" };
+  const medicines = [];
+  for (const m of medsIn) {
+    const medName = str(m && m.name, 80);
+    const daysLeft = Number(m && m.daysLeft);
+    if (!medName) return { error: "Each medicine needs a name" };
+    if (!Number.isFinite(daysLeft) || daysLeft < 0 || daysLeft > 365) {
+      return { error: `daysLeft for ${medName} must be a number from 0 to 365` };
+    }
+    medicines.push({ name: medName, daysLeft });
+  }
+
+  return { user: { name, phone, email, address, medicines } };
+}
 
 // ----------------- API Endpoints -----------------
 
-app.get("/users", (req, res) => {
-  fs.readFile(FILE_PATH, (err, data) => {
-    if (err)
-      return res
-        .status(500)
-        .json({ error: "Error reading file", details: err.message });
-    data.length ? res.json(JSON.parse(data)) : res.json([{}]);
-  });
+app.get("/api/health", (req, res) => res.json({ ok: true, app: "trackmymeds" }));
+
+app.get("/users", (req, res, next) => {
+  try {
+    res.json(readUsers());
+  } catch (err) {
+    next(err);
+  }
 });
 
-app.post("/users", (req, res) => {
-  fs.readFile(FILE_PATH, (err, data) => {
-    if (err)
-      return res
-        .status(500)
-        .json({ error: "Error reading file", details: err.message });
-
-    const users = JSON.parse(data);
-    const newUser = req.body;
-
-    if (!newUser.name || !newUser.phone) {
-      return res.status(400).json({ error: "Missing required user fields" });
+app.post("/users", (req, res, next) => {
+  const { user, error } = validateUser(req.body);
+  if (error) return res.status(400).json({ error });
+  try {
+    const users = readUsers();
+    if (users.some((u) => u.phone === user.phone)) {
+      return res.status(409).json({ error: "A customer with this phone number already exists" });
     }
-
-    users.push(newUser);
-
-    fs.writeFile(FILE_PATH, JSON.stringify(users, null, 2), (err) => {
-      if (err)
-        return res
-          .status(500)
-          .json({ error: "Error writing file", details: err.message });
-      res.status(201).json({ message: "User added successfully" });
-    });
-  });
+    users.push(user);
+    writeUsers(users);
+    res.status(201).json(user);
+  } catch (err) {
+    next(err);
+  }
 });
 
-app.delete("/users/:phone", (req, res) => {
-  const phone = req.params.phone;
-
-  fs.readFile(FILE_PATH, (err, data) => {
-    if (err) return res.status(500).json({ error: "Error reading file" });
-
-    let users = JSON.parse(data);
-    const initialLength = users.length;
-
-    users = users.filter((user) => user.phone !== phone);
-
-    if (users.length === initialLength) {
-      return res.status(404).json({ error: "User not found" });
+// :phone is the customer's current phone; the body may contain a new phone.
+app.put("/users/:phone", (req, res, next) => {
+  const { user, error } = validateUser(req.body);
+  if (error) return res.status(400).json({ error });
+  try {
+    const users = readUsers();
+    const index = users.findIndex((u) => u.phone === req.params.phone);
+    if (index === -1) return res.status(404).json({ error: "Customer not found" });
+    if (user.phone !== req.params.phone && users.some((u) => u.phone === user.phone)) {
+      return res.status(409).json({ error: "A customer with this phone number already exists" });
     }
-
-    fs.writeFile(FILE_PATH, JSON.stringify(users, null, 2), (err) => {
-      if (err)
-        return res
-          .status(500)
-          .json({ error: "Error writing file", details: err.message });
-
-      res.json({ message: "User deleted successfully" });
-    });
-  });
+    users[index] = user;
+    writeUsers(users);
+    res.json(user);
+  } catch (err) {
+    next(err);
+  }
 });
 
-app.put("/users/:phone", (req, res) => {
-  const phone = req.params.phone;
-  const updatedUser = req.body;
+app.delete("/users/:phone", (req, res, next) => {
+  try {
+    const users = readUsers();
+    const remaining = users.filter((u) => u.phone !== req.params.phone);
+    if (remaining.length === users.length) return res.status(404).json({ error: "Customer not found" });
+    writeUsers(remaining);
+    res.json({ message: "Customer deleted" });
+  } catch (err) {
+    next(err);
+  }
+});
 
-  fs.readFile(FILE_PATH, (err, data) => {
-    if (err)
-      return res
-        .status(500)
-        .json({ error: "Error reading user data", details: err.message });
+app.use((req, res) => res.status(404).json({ error: "Not found" }));
 
-    let users = JSON.parse(data);
-    const userIndex = users.findIndex((user) => user.phone === phone);
-
-    if (userIndex === -1) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    users[userIndex] = updatedUser;
-
-    fs.writeFile(FILE_PATH, JSON.stringify(users, null, 2), (err) => {
-      if (err)
-        return res
-          .status(500)
-          .json({ error: "Error saving updated data", details: err.message });
-
-      res.json({ message: "User updated successfully" });
-    });
-  });
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  if (err.type === "entity.parse.failed") return res.status(400).json({ error: "Invalid JSON body" });
+  console.error(err);
+  res.status(500).json({ error: "Internal server error" });
 });
 
 // ----------------- Background Job -----------------
 
-function updateMedicineTimersAndNotify() {
-  fs.readFile(FILE_PATH, (err, data) => {
-    if (err) return console.error("⛔ Failed to read users for update:", err);
+// Every 12 hours each medicine's supply goes down by half a day.
+// When it drops to REFILL_THRESHOLD or below, a reminder is logged
+// (sending an SMS is left as a hook — see sendReminder).
+function sendReminder(user, med) {
+  const left = med.daysLeft === 0 ? "no" : med.daysLeft;
+  console.log(`Reminder for ${user.phone}: only ${left} day(s) of ${med.name} left. Please refill.`);
+}
 
-    let users;
+function updateMedicineTimers() {
+  let users;
+  try {
+    users = readUsers();
+  } catch (err) {
+    return console.error("Background job: could not read users:", err.message);
+  }
+
+  let updated = false;
+  for (const user of users) {
+    for (const med of user.medicines || []) {
+      if (typeof med.daysLeft === "number" && med.daysLeft > 0) {
+        med.daysLeft = Math.max(0, med.daysLeft - 0.5);
+        updated = true;
+        if (med.daysLeft <= REFILL_THRESHOLD) sendReminder(user, med);
+      }
+    }
+  }
+
+  if (updated) {
     try {
-      users = data.length ? JSON.parse(data) : [{}];
-    } catch (e) {
-      return console.error("⛔ Invalid user JSON format:", e);
+      writeUsers(users);
+      console.log("Medicine timers updated.");
+    } catch (err) {
+      console.error("Background job: could not save users:", err.message);
     }
+  }
+}
 
-    let updated = false;
+// ----------------- Start -----------------
 
-    users.forEach((user) => {
-      if (!user.medicines || !Array.isArray(user.medicines)) return;
+if (require.main === module) {
+  setInterval(updateMedicineTimers, TICK_MS);
 
-      user.medicines.forEach((med) => {
-        if (typeof med.daysLeft === "number" && med.daysLeft > 0) {
-          med.daysLeft = Math.max(0, med.daysLeft - 0.5);
-          updated = true;
+  const keyPath = path.join(CERT_DIR, "key.pem");
+  const certPath = path.join(CERT_DIR, "cert.pem");
+  const useHttps = fs.existsSync(keyPath) && fs.existsSync(certPath);
+  const server = useHttps
+    ? https.createServer({ key: fs.readFileSync(keyPath), cert: fs.readFileSync(certPath) }, app)
+    : http.createServer(app);
 
-          if (med.daysLeft <= 1) {
-            const message = `Reminder: Only ${
-              med.daysLeft === 0 ? "no" : med.daysLeft
-            } day(s) of ${med.name} left. Please refill. — Knox Medicals`;
-            // sendSMS(user.phone, message);
-            console.log(`📩 SMS sent to ${user.phone} regarding ${med.name}`);
-          }
-        }
-      });
-    });
-
-    if (updated) {
-      fs.writeFile(FILE_PATH, JSON.stringify(users, null, 2), (err) => {
-        if (err) return console.error("⛔ Failed to write updated users:", err);
-        console.log("✅ Medicine timers updated and saved.");
-      });
-    }
+  server.listen(PORT, HOST, () => {
+    const scheme = useHttps ? "https" : "http";
+    console.log(`TrackMyMeds running at ${scheme}://localhost:${PORT}`);
+    console.log(`Allowed CORS origins: ${ALLOWED_ORIGINS.join(", ")}`);
   });
 }
 
-// Run every 12 hours (12 * 60 * 60 * 1000 ms)
-setInterval(updateMedicineTimersAndNotify, 12 * 60 * 60 * 1000);
-
-// Run once immediately on startup
-updateMedicineTimersAndNotify();
-
-// ----------------- Start HTTPS Server -----------------
-
-const httpsOptions = {
-  key: fs.readFileSync(path.join(__dirname, "certs", "key.pem")),
-  cert: fs.readFileSync(path.join(__dirname, "certs", "cert.pem")),
-};
-
-https.createServer(httpsOptions, app).listen(PORT, "0.0.0.0", () => {
-  console.log(`🔒 HTTPS server is running on https://localhost:${PORT}`);
-});
+module.exports = { app, updateMedicineTimers, validateUser };
